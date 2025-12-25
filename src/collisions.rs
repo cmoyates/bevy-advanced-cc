@@ -10,7 +10,17 @@ use bevy::{
     transform::components::Transform,
 };
 
-use crate::{s_movement, Level, Physics, Player, MAX_GROUNDED_TIMER, MAX_WALLED_TIMER};
+use crate::{
+    s_movement, Level, Physics, Player, CEILING_NORMAL_Y_THRESHOLD, GROUND_NORMAL_Y_THRESHOLD,
+    MAX_GROUNDED_TIMER, MAX_WALLED_TIMER, NORMAL_DOT_THRESHOLD,
+};
+
+// Collision detection constants
+const RAYCAST_DIRECTION_SCALE: f32 = 10000.0;
+const RAYCAST_DIRECTION: Vec2 = Vec2::new(2.0, 1.0);
+const TOUCH_THRESHOLD: f32 = 0.5;
+const DEBUG_NORMAL_LINE_LENGTH: f32 = 12.0;
+const DISTANCE_CALCULATION_RADIUS_MULTIPLIER: f32 = 2.0;
 
 pub struct CollisionPlugin;
 
@@ -46,7 +56,7 @@ pub fn s_collision(
                     start,
                     end,
                     player_transform.translation.xy(),
-                    player_transform.translation.xy() + Vec2::new(2.0, 1.0) * 10000.0,
+                    player_transform.translation.xy() + RAYCAST_DIRECTION * RAYCAST_DIRECTION_SCALE,
                 );
 
                 if let Some(point) = intersection {
@@ -71,17 +81,19 @@ pub fn s_collision(
                 let colliding_with_line = distance_sq <= player_physics.radius.powi(2);
                 colliding_with_polygon = colliding_with_polygon || colliding_with_line;
 
-                let touching_line = distance_sq <= (player_physics.radius + 0.5).powi(2);
+                let touching_line =
+                    distance_sq <= (player_physics.radius + TOUCH_THRESHOLD).powi(2);
 
                 if touching_line {
                     let normal_dir =
                         (player_transform.translation.xy() - projection).normalize_or_zero();
 
                     // If the line is not above the player
-                    if normal_dir.y >= -0.01 {
+                    if normal_dir.y >= CEILING_NORMAL_Y_THRESHOLD {
                         gizmos.line_2d(
                             player_transform.translation.xy(),
-                            player_transform.translation.xy() - normal_dir * 12.0,
+                            player_transform.translation.xy()
+                                - normal_dir * DEBUG_NORMAL_LINE_LENGTH,
                             Color::WHITE,
                         );
 
@@ -89,13 +101,13 @@ pub fn s_collision(
                         new_player_normal -= normal_dir;
 
                         // If the player is on a wall
-                        if normal_dir.x.abs() >= 0.8 {
+                        if normal_dir.x.abs() >= NORMAL_DOT_THRESHOLD {
                             player_data.walled_timer = MAX_WALLED_TIMER * normal_dir.x as i32;
                             player_data.has_wall_jumped = false;
                         }
 
                         // If the player is on the ground
-                        if normal_dir.y > 0.01 {
+                        if normal_dir.y > GROUND_NORMAL_Y_THRESHOLD {
                             player_data.grounded_timer = MAX_GROUNDED_TIMER;
                             player_data.walled_timer = 0;
                             player_data.has_wall_jumped = false;
@@ -107,9 +119,7 @@ pub fn s_collision(
                     let mut delta =
                         (player_transform.translation.xy() - projection).normalize_or_zero();
 
-                    if delta.y < -0.01 {
-                        // println!("Hit ceiling");
-                        // dbg!(delta);
+                    if delta.y < CEILING_NORMAL_Y_THRESHOLD {
                         player_physics.velocity.y = 0.0;
                     }
 
@@ -136,8 +146,6 @@ pub fn s_collision(
         let velocity_adjustment =
             player_physics.velocity.dot(new_player_normal) * new_player_normal;
 
-        // dbg!(player_physics.normal);
-
         player_physics.velocity -= velocity_adjustment;
 
         // Update the players position
@@ -156,12 +164,15 @@ pub fn find_projection(start: Vec2, end: Vec2, point: Vec2, radius: f32) -> (f32
     let projection_point = line_vec_normalized * dot + start;
 
     if dot < 0.0 {
-        return (point_vec.length_squared() + radius * 2.0, projection_point);
+        return (
+            point_vec.length_squared() + radius * DISTANCE_CALCULATION_RADIUS_MULTIPLIER,
+            projection_point,
+        );
     }
 
     if dot.powi(2) > (end - start).length_squared() {
         return (
-            (point - end).length_squared() + radius * 2.0,
+            (point - end).length_squared() + radius * DISTANCE_CALCULATION_RADIUS_MULTIPLIER,
             projection_point,
         );
     }

@@ -52,6 +52,19 @@ pub const MAX_JUMP_TIMER: i32 = 10;
 pub const MAX_GROUNDED_TIMER: i32 = 10;
 pub const MAX_WALLED_TIMER: i32 = 10;
 
+// Physics constants
+pub const JUMP_VELOCITY: f32 = 9.0;
+pub const WALL_JUMP_VELOCITY_Y: f32 = 4.5;
+pub const WALL_JUMP_VELOCITY_X: f32 = 7.8;
+pub const GRAVITY_STRENGTH: f32 = 0.5;
+pub const WALL_JUMP_ACCELERATION_REDUCTION: f32 = 0.5;
+pub const JUMP_RELEASE_VELOCITY_DIVISOR: f32 = 3.0;
+
+// Collision detection thresholds
+pub const NORMAL_DOT_THRESHOLD: f32 = 0.8;
+pub const GROUND_NORMAL_Y_THRESHOLD: f32 = 0.01;
+pub const CEILING_NORMAL_Y_THRESHOLD: f32 = -0.01;
+
 #[derive(Component)]
 pub struct Player {
     jump_timer: i32,
@@ -139,7 +152,7 @@ pub fn s_input(
         }
 
         if keyboard_input.just_released(KeyCode::Space) && player_physics.velocity.y > 0.0 {
-            player_physics.velocity.y /= 3.0;
+            player_physics.velocity.y /= JUMP_RELEASE_VELOCITY_DIVISOR;
         }
 
         // Normalize direction
@@ -153,7 +166,7 @@ pub fn s_input(
 /// Movement system
 pub fn s_movement(
     mut player_query: Query<(&mut Transform, &mut Physics, &mut Player)>,
-    mut input_dir: ResMut<InputDir>,
+    input_dir: Res<InputDir>,
 ) {
     if let Ok((mut player_transform, mut player_physics, mut player_data)) =
         player_query.single_mut()
@@ -161,26 +174,30 @@ pub fn s_movement(
         let player_falling = player_physics.normal.length_squared() == 0.0;
         let no_input = input_dir.dir.length_squared() == 0.0;
 
-        // Rotate input according to the normal
-        if !no_input && !player_falling && input_dir.dir.dot(player_physics.normal).abs() < 0.8 {
+        // Rotate input according to the normal (compute locally, don't mutate resource)
+        let mut effective_input_dir = input_dir.dir;
+        if !no_input
+            && !player_falling
+            && input_dir.dir.dot(player_physics.normal).abs() < NORMAL_DOT_THRESHOLD
+        {
             let mut new_input_dir = Vec2::new(player_physics.normal.y, -player_physics.normal.x);
 
             if new_input_dir.dot(input_dir.dir) < 0.0 {
                 new_input_dir *= -1.0;
             }
 
-            input_dir.dir = new_input_dir;
+            effective_input_dir = new_input_dir;
         }
 
         // If the player is on a wall and is trying to move away from it
-        let player_move_off_wall = player_physics.normal.x.abs() >= 0.8
-            && input_dir.dir.x.abs() >= 0.8
-            && player_physics.normal.x.signum() != input_dir.dir.x.signum();
+        let player_move_off_wall = player_physics.normal.x.abs() >= NORMAL_DOT_THRESHOLD
+            && effective_input_dir.x.abs() >= NORMAL_DOT_THRESHOLD
+            && player_physics.normal.x.signum() != effective_input_dir.x.signum();
 
         // Acceleration
         {
             // Apply acceleration
-            player_physics.acceleration = (input_dir.dir * PLAYER_MAX_SPEED
+            player_physics.acceleration = (effective_input_dir * PLAYER_MAX_SPEED
                 - player_physics.velocity)
                 * if no_input {
                     // Deacceleration
@@ -192,7 +209,7 @@ pub fn s_movement(
 
             // Wall jump physics
             player_physics.acceleration *= if player_data.has_wall_jumped {
-                0.5
+                WALL_JUMP_ACCELERATION_REDUCTION
             } else {
                 1.0
             };
@@ -215,10 +232,10 @@ pub fn s_movement(
         {
             if player_move_off_wall || player_falling {
                 // Gravity goes down
-                player_physics.acceleration.y = -0.5;
+                player_physics.acceleration.y = -GRAVITY_STRENGTH;
             } else {
                 // Gravity goes towards the normal
-                let gravity_normal_dir = player_physics.normal * 0.5;
+                let gravity_normal_dir = player_physics.normal * GRAVITY_STRENGTH;
                 player_physics.acceleration += gravity_normal_dir;
             }
         }
@@ -230,15 +247,16 @@ pub fn s_movement(
                 // If on the ground
                 if player_data.grounded_timer > 0 {
                     // Jump
-                    player_physics.velocity.y = 9.0;
+                    player_physics.velocity.y = JUMP_VELOCITY;
                     player_data.jump_timer = 0;
                     player_data.grounded_timer = 0;
                 }
                 // If on a wall
                 else if player_data.walled_timer != 0 {
                     // Wall jump
-                    player_physics.velocity.y = 4.5;
-                    player_physics.velocity.x = player_data.walled_timer.signum() as f32 * 7.8;
+                    player_physics.velocity.y = WALL_JUMP_VELOCITY_Y;
+                    player_physics.velocity.x =
+                        player_data.walled_timer.signum() as f32 * WALL_JUMP_VELOCITY_X;
                     player_data.jump_timer = 0;
                     player_data.walled_timer = 0;
                     player_data.has_wall_jumped = true;
@@ -258,10 +276,10 @@ pub fn s_movement(
 /// Render system
 pub fn s_render(
     mut gizmos: Gizmos,
-    mut player_query: Query<(&mut Transform, &mut Physics), With<Player>>,
+    player_query: Query<(&Transform, &Physics), With<Player>>,
     level: Res<Level>,
 ) {
-    if let Ok((player_transform, player_physics)) = player_query.single_mut() {
+    if let Ok((player_transform, player_physics)) = player_query.single() {
         // Draw player
         gizmos.circle_2d(
             player_transform.translation.xy(),
@@ -271,7 +289,7 @@ pub fn s_render(
 
         // Draw level
         for polygon in &level.polygons {
-            gizmos.linestrip_2d(polygon.points.to_vec(), polygon.color);
+            gizmos.linestrip_2d(polygon.points.iter().copied(), polygon.color);
         }
     }
 }
