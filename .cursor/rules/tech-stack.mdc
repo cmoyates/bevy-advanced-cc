@@ -1,0 +1,295 @@
+---
+description: Technology stack, dependency versions, and best practices for bevy-advanced-cc
+globs:
+alwaysApply: true
+---
+
+# Technology Stack
+
+This document outlines the technology stack, dependency versions, and best practices for the bevy-advanced-cc project.
+
+## Application Overview
+
+**bevy-advanced-cc** is a Rust-based 2D game project built with the Bevy game engine, featuring an advanced character controller with physics-based movement, collision detection, and level generation.
+
+## Rust Edition
+
+- **Edition**: 2021
+- **Minimum Rust Version**: Not explicitly specified, but Bevy 0.12.1 requires Rust 1.70+
+
+## Core Dependencies
+
+### Bevy Game Engine
+
+**Version**: `0.12.1`
+
+Bevy is the primary game engine framework providing:
+- Entity Component System (ECS)
+- 2D/3D rendering
+- Input handling
+- Window management
+- Plugin system
+- Gizmos for debugging visualization
+
+**Usage in Project**:
+- ECS for game entities (Player, Physics components)
+- Systems for game logic (input, movement, collision, rendering)
+- Resources for shared state (Level, InputDir)
+- Plugins for modular code organization (CollisionPlugin)
+- Gizmos for drawing player and level geometry
+
+**Best Practices for Bevy 0.12.1**:
+
+1. **System Ordering**: Use `.after()` and `.before()` to control system execution order:
+   ```rust
+   .add_systems(Update, s_movement.after(s_input))
+   ```
+
+2. **Query Patterns**: Prefer `get_single_mut()` for single-entity queries:
+   ```rust
+   if let Ok((mut transform, mut physics)) = player_query.get_single_mut() {
+       // ...
+   }
+   ```
+
+3. **Resource Management**: Use `Res` for read-only resources and `ResMut` for mutable resources:
+   ```rust
+   fn system(level: Res<Level>, mut input_dir: ResMut<InputDir>) {
+       // ...
+   }
+   ```
+
+4. **Plugin Architecture**: Organize related systems into plugins for better modularity:
+   ```rust
+   pub struct CollisionPlugin;
+   impl Plugin for CollisionPlugin {
+       fn build(&self, app: &mut App) {
+           app.add_systems(Update, s_collision.after(s_movement));
+       }
+   }
+   ```
+
+5. **Gizmos**: Use `Gizmos` for debug visualization (not for production rendering):
+   ```rust
+   gizmos.circle_2d(position, radius, Color::WHITE);
+   gizmos.linestrip_2d(points, color);
+   ```
+
+6. **Input Handling**: Use `Input<KeyCode>` for keyboard input:
+   ```rust
+   if keyboard_input.just_pressed(KeyCode::Space) {
+       // Handle jump
+   }
+   ```
+
+**Version-Specific Notes**:
+- Bevy 0.12 uses the new `Schedule` API with system sets
+- `PresentMode::AutoNoVsync` is recommended for consistent frame timing
+- Use `Time` resource for frame timing and delta calculations
+
+**Upgrade Considerations**:
+- Bevy 0.12.1 is a stable release, but check Bevy's migration guides when upgrading
+- Bevy follows a rapid release cycle; test thoroughly when updating versions
+
+### Serde
+
+**Version**: `1.0.196` with `derive` feature
+
+Serde is a serialization/deserialization framework for Rust.
+
+**Usage in Project**:
+- Currently used implicitly through `serde_json` for JSON deserialization
+- The `derive` feature enables `#[derive(Serialize, Deserialize)]` macros
+
+**Best Practices**:
+
+1. **Feature Flags**: Only enable features you need. The project correctly uses `features = ["derive"]`:
+   ```toml
+   serde = { version = "1.0.196", features = ["derive"] }
+   ```
+
+2. **Derive Macros**: Use derive macros for simple structs:
+   ```rust
+   #[derive(Serialize, Deserialize)]
+   struct MyData {
+       field: String,
+   }
+   ```
+
+3. **Error Handling**: Always handle deserialization errors properly:
+   ```rust
+   let data: MyType = serde_json::from_str(json_str)
+       .expect("Failed to deserialize"); // Or use proper error handling
+   ```
+
+**Version-Specific Notes**:
+- Serde 1.0.x is stable and widely used
+- The `derive` feature is essential for convenient serialization
+- Serde 1.0.196 is a recent patch version with bug fixes
+
+### Serde JSON
+
+**Version**: `1.0.112`
+
+Serde JSON provides JSON serialization/deserialization support for Serde.
+
+**Usage in Project**:
+- Deserializing level data from JSON files (`assets/level.json`)
+- Loading level geometry data at runtime
+
+**Best Practices**:
+
+1. **File Loading**: Use `include_bytes!` for compile-time asset embedding:
+   ```rust
+   const LEVEL_DATA: &'static [u8] = include_bytes!("../assets/level.json");
+   ```
+
+2. **Type Safety**: Use strongly-typed structs for deserialization:
+   ```rust
+   let json_data: Vec<Vec<u32>> = serde_json::from_str(&res.unwrap()).unwrap();
+   ```
+
+3. **Error Handling**: Consider using `Result` types instead of `unwrap()` for production code:
+   ```rust
+   match serde_json::from_str(json_str) {
+       Ok(data) => data,
+       Err(e) => {
+           eprintln!("Failed to parse JSON: {}", e);
+           // Handle error appropriately
+       }
+   }
+   ```
+
+**Version-Specific Notes**:
+- Serde JSON 1.0.112 is compatible with Serde 1.0.196
+- Both versions are stable and well-tested
+
+### Rand
+
+**Version**: `0.8.5`
+
+Rand is a random number generation library for Rust.
+
+**Usage in Project**:
+- Generating random colors for level polygons in `level.rs`
+- Using `thread_rng()` for thread-local random number generation
+
+**Best Practices**:
+
+1. **Thread RNG**: Use `rand::thread_rng()` for simple use cases:
+   ```rust
+   let mut rng = rand::thread_rng();
+   let value = rng.gen_range(0.0..=1.0);
+   ```
+
+2. **Range Generation**: Use inclusive ranges with `gen_range()`:
+   ```rust
+   rng.gen_range(0.0..=1.0)  // Inclusive range
+   ```
+
+3. **Seeding**: For reproducible randomness, use seeded RNGs:
+   ```rust
+   use rand::SeedableRng;
+   let mut rng = StdRng::seed_from_u64(42);
+   ```
+
+**Version-Specific Notes**:
+- Rand 0.8.5 is a stable release in the 0.8 series
+- The API is stable and well-documented
+- Consider upgrading to 0.9+ for new features, but test compatibility
+
+## Dependency Management Best Practices
+
+### Version Pinning
+
+The project uses exact version pinning (`"0.12.1"`, `"0.8.5"`, etc.), which is appropriate for:
+- Ensuring reproducible builds
+- Preventing unexpected breaking changes
+- Production applications
+
+**Considerations**:
+- For libraries, consider using version ranges (`"0.12"` instead of `"0.12.1"`) to allow patch updates
+- For applications, exact pinning is fine and recommended
+- Use `Cargo.lock` to track exact transitive dependency versions
+
+### Feature Flags
+
+Only enable necessary features to reduce compile time and binary size:
+- ✅ `serde` with `derive` feature only
+- ✅ Bevy uses default features (appropriate for game development)
+
+### Security and Maintenance
+
+1. **Regular Updates**: Run `cargo update` periodically to get patch updates:
+   ```bash
+   cargo update
+   ```
+
+2. **Security Audits**: Use `cargo audit` to check for vulnerabilities:
+   ```bash
+   cargo install cargo-audit
+   cargo audit
+   ```
+
+3. **Dependency Tree**: Inspect dependencies with `cargo tree`:
+   ```bash
+   cargo tree
+   ```
+
+4. **Outdated Dependencies**: Check for outdated dependencies:
+   ```bash
+   cargo install cargo-outdated
+   cargo outdated
+   ```
+
+## Project-Specific Patterns
+
+### System Organization
+
+Systems are organized by responsibility:
+- `s_init` - Startup/initialization
+- `s_input` - Input handling
+- `s_movement` - Physics and movement
+- `s_collision` - Collision detection (in plugin)
+- `s_render` - Rendering
+- `s_timers` - Timer updates
+- `s_wait_for_next_frame` - Frame rate capping
+
+### Component Design
+
+- **Player**: Gameplay state (jump timers, wall jump state)
+- **Physics**: Physics state (velocity, acceleration, position, radius, normal)
+
+### Resource Design
+
+- **Level**: Immutable level geometry data
+- **InputDir**: Mutable input direction resource
+
+## Version Compatibility Matrix
+
+| Dependency | Version | Compatible With | Notes |
+|------------|---------|-----------------|-------|
+| Bevy | 0.12.1 | Rust 1.70+ | Stable release |
+| Serde | 1.0.196 | Any Rust version | Stable, widely compatible |
+| Serde JSON | 1.0.112 | Serde 1.0.x | Compatible with Serde 1.0.196 |
+| Rand | 0.8.5 | Rust 1.36+ | Stable release |
+
+## Upgrade Path Recommendations
+
+1. **Bevy**: Check Bevy's migration guides before upgrading. Bevy 0.12 → 0.13+ may have breaking changes.
+
+2. **Serde/Serde JSON**: These are stable and can be updated within the 1.0.x series safely.
+
+3. **Rand**: Consider upgrading to 0.9+ for new features, but test thoroughly as there may be API changes.
+
+4. **Rust Edition**: Consider upgrading to Rust 2024 edition when it becomes stable, but test all dependencies for compatibility.
+
+## Additional Notes
+
+- All dependencies are actively maintained
+- The current versions are stable and production-ready
+- Consider adding `rust-version` to `Cargo.toml` to specify minimum Rust version:
+  ```toml
+  [package]
+  rust-version = "1.70"
+  ```

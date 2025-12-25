@@ -1,0 +1,118 @@
+---
+description: Project directory structure and important files overview
+globs:
+alwaysApply: false
+---
+
+# Project Structure
+
+This document outlines the directory structure and important files in the bevy-advanced-cc project.
+
+## Root Directory
+
+```
+bevy-advanced-cc/
+├── src/                    # Source code directory
+├── assets/                 # Game assets and data files
+├── target/                 # Build artifacts (generated, gitignored)
+├── .cursor/                # Cursor IDE configuration
+├── .claude/                # Claude AI configuration
+├── Cargo.toml              # Rust project manifest
+├── Cargo.lock              # Dependency lock file
+├── CLAUDE.md               # Project documentation
+└── .gitignore              # Git ignore patterns
+```
+
+## Source Code (`src/`)
+
+The `src/` directory contains all Rust source files:
+
+- **`main.rs`** - Application entry point
+  - Initializes Bevy app
+  - Sets up plugins and systems
+  - Defines core resources (Level, InputDir)
+  - Contains player movement and rendering systems
+
+- **`collisions.rs`** - Collision detection and response system
+  - Implements collision plugin
+  - Handles player-environment collisions
+  - Provides collision detection utilities
+
+- **`level.rs`** - Level management and generation
+  - Defines Polygon structure
+  - Contains level generation logic
+  - Handles level data loading
+
+## Assets (`assets/`)
+
+Game assets and data files:
+
+- **`level.json`** - Level data file
+  - Contains polygon definitions for level geometry
+  - Loaded at runtime to generate level polygons
+
+## Configuration Files
+
+### Rust Project Files
+
+- **`Cargo.toml`** - Project manifest
+  - Defines project metadata (name, version, edition)
+  - Lists dependencies (bevy, rand, serde, serde_json)
+
+- **`Cargo.lock`** - Dependency lock file
+  - Pins exact versions of all dependencies
+  - Generated automatically by Cargo
+
+### IDE Configuration
+
+- **`.cursor/rules/`** - Cursor rules directory
+  - `cursor-rules.mdc` - Rules for managing cursor rules
+  - `self-improvement.mdc` - Self-improvement guidelines
+  - `project-structure.mdc` - This file
+
+- **`.cursor/commands/`** - Cursor command definitions
+  - `generate-agentsmd.md` - Command documentation
+
+- **`.claude/commands/`** - Claude AI command definitions
+  - `create-prompt.md` - Prompt creation commands
+  - `primer.md` - Primer commands
+  - `run-prompt.md` - Prompt execution commands
+
+- **`.claude/settings.local.json`** - Local Claude settings
+  - User-specific configuration
+
+### Documentation
+
+- **`CLAUDE.md`** - Project documentation
+  - Contains project overview and guidelines
+  - May include development notes
+
+- **`.gitignore`** - Git ignore patterns
+  - Excludes `target/` directory (build artifacts)
+  - Excludes `.DS_Store` files (macOS)
+
+## Build Artifacts (`target/`)
+
+The `target/` directory contains compiled artifacts and is:
+- Generated automatically by Cargo
+- Excluded from version control (via `.gitignore`)
+- Should not be manually edited
+
+## Important Notes
+
+1. **Source Files**: All Rust source code lives in `src/`. New modules should be added here.
+
+2. **Assets**: Game assets (JSON, images, etc.) should be placed in `assets/`.
+
+3. **Configuration**: IDE-specific configuration goes in `.cursor/` or `.claude/`.
+
+4. **Build Output**: The `target/` directory is generated and should never be committed to version control.
+
+5. **Dependencies**: All Rust dependencies are managed through `Cargo.toml`. Run `cargo build` to fetch and compile dependencies.
+
+## File Naming Conventions
+
+- Rust source files: `snake_case.rs`
+- Cursor rules: `kebab-case.mdc`
+- Documentation: `UPPERCASE.md` or `kebab-case.md`
+- JSON data files: `kebab-case.json`
