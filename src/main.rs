@@ -13,6 +13,7 @@ fn main() {
     App::new()
         .insert_resource(ClearColor(Color::srgb(0.0, 0.0, 0.0)))
         .insert_resource(InputDir { dir: Vec2::ZERO })
+        .insert_resource(ShouldExit(false))
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Advanced Character Controller".to_string(),
@@ -30,6 +31,8 @@ fn main() {
         .add_systems(Update, s_timers.after(s_collision))
         .add_systems(Update, s_debug_collision.after(s_collision))
         .add_systems(Update, s_render.after(s_timers))
+        // Exit system runs last to ensure clean shutdown
+        .add_systems(Update, s_exit.after(s_render))
         .run();
 }
 
@@ -42,6 +45,9 @@ pub struct Level {
 pub struct InputDir {
     pub dir: Vec2,
 }
+
+#[derive(Resource)]
+pub struct ShouldExit(bool);
 
 // Movement constants (units: pixels/second)
 // Converted from 5.0 pixels/frame at 60fps = 300.0 pixels/second
@@ -162,13 +168,13 @@ pub fn s_init(mut commands: Commands) {
 /// Input system
 pub fn s_input(
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut exit: MessageWriter<AppExit>,
+    mut should_exit: ResMut<ShouldExit>,
     mut input_dir: ResMut<InputDir>,
     mut player_query: Query<(&mut Player, &mut Physics)>,
 ) {
-    // Escape to exit - handle this first, outside player query, so it always works
+    // Escape to exit - set flag for dedicated exit system to handle
     if keyboard_input.just_pressed(KeyCode::Escape) {
-        exit.write(AppExit::Success);
+        should_exit.0 = true;
         return;
     }
 
@@ -387,5 +393,13 @@ pub fn s_timers(time: Res<Time>, mut player_query: Query<&mut Player>) {
                 player_data.wall_direction = 0.0;
             }
         }
+    }
+}
+
+/// Exit system: Handles clean application exit after all other systems complete
+/// This runs last in the update loop to ensure no race conditions with other systems
+pub fn s_exit(should_exit: Res<ShouldExit>, mut exit: MessageWriter<AppExit>) {
+    if should_exit.0 {
+        exit.write(AppExit::Success);
     }
 }
