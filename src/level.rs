@@ -1,4 +1,4 @@
-use bevy::{math::Vec2, render::color::Color};
+use bevy::{math::Vec2, color::Color};
 use rand::Rng;
 
 pub struct Polygon {
@@ -10,7 +10,7 @@ pub struct Polygon {
 const LEVEL_DATA: &'static [u8] = include_bytes!("../assets/level.json");
 
 pub fn generate_level_polygons(grid_size: f32) -> Vec<Polygon> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     let res = std::str::from_utf8(LEVEL_DATA);
     let json_data: Vec<Vec<u32>> = serde_json::from_str(&res.unwrap()).unwrap();
@@ -551,10 +551,10 @@ pub fn generate_level_polygons(grid_size: f32) -> Vec<Polygon> {
 
         let collision_side = calculate_winding_order(&polygon_lines).signum();
 
-        let color = Color::rgb(
-            rng.gen_range(0.0..=1.0),
-            rng.gen_range(0.0..=1.0),
-            rng.gen_range(0.0..=1.0),
+        let color = Color::srgb(
+            rng.random_range(0.0..=1.0),
+            rng.random_range(0.0..=1.0),
+            rng.random_range(0.0..=1.0),
         );
 
         // Add the polygon to the list of polygons

@@ -1,12 +1,12 @@
 use bevy::{
     app::{App, Plugin, Update},
+    color::Color,
     ecs::{
-        schedule::IntoSystemConfigs,
+        schedule::IntoScheduleConfigs,
         system::{Query, Res},
     },
     gizmos::gizmos::Gizmos,
     math::{Vec2, Vec3Swizzles},
-    render::color::Color,
     transform::components::Transform,
 };
 
@@ -26,7 +26,7 @@ pub fn s_collision(
     mut gizmos: Gizmos,
 ) {
     if let Ok((mut player_transform, mut player_physics, mut player_data)) =
-        player_query.get_single_mut()
+        player_query.single_mut()
     {
         let mut adjustment = Vec2::ZERO;
 

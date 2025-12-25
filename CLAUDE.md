@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A 2D platformer with advanced character controller physics built using Bevy 0.12.1. Features include:
+A 2D platformer with advanced character controller physics built using Bevy 0.17.3. Features include:
 - Circle-based player collision with polygon level geometry
 - Advanced movement mechanics: wall jumping, variable jump height, surface alignment
 - Custom physics system with velocity, acceleration, and surface normals

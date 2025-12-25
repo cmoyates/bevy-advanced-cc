@@ -4,7 +4,7 @@ mod level;
 use std::{thread::sleep, time::Duration};
 
 use ::bevy::prelude::*;
-use bevy::{app::AppExit, window::PresentMode};
+use bevy::{app::AppExit, input::ButtonInput, window::PresentMode};
 use collisions::{s_collision, CollisionPlugin};
 use level::{generate_level_polygons, Polygon};
 
@@ -13,13 +13,12 @@ const FRAME_DURATION_SECS: f32 = 1.0 / FRAMERATE as f32;
 
 fn main() {
     App::new()
-        .insert_resource(ClearColor(Color::rgb(0.0, 0.0, 0.0)))
+        .insert_resource(ClearColor(Color::srgb(0.0, 0.0, 0.0)))
         .insert_resource(InputDir { dir: Vec2::ZERO })
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Advanced Character Controller".to_string(),
                 present_mode: PresentMode::AutoNoVsync,
-                fit_canvas_to_parent: true,
                 ..default()
             }),
             ..default()
@@ -73,7 +72,7 @@ pub struct Physics {
 /// Initial setup system
 pub fn s_init(mut commands: Commands) {
     // Spawn camera
-    commands.spawn(Camera2dBundle::default());
+    commands.spawn((Camera2d, Transform::default()));
 
     // Spawn player
     commands.spawn((
@@ -107,30 +106,30 @@ pub fn s_init(mut commands: Commands) {
 
 /// Input system
 pub fn s_input(
-    keyboard_input: Res<Input<KeyCode>>,
-    mut exit: EventWriter<AppExit>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut exit: MessageWriter<AppExit>,
     mut input_dir: ResMut<InputDir>,
     mut player_query: Query<(&mut Player, &mut Physics)>,
 ) {
-    if let Ok((mut player_data, mut player_physics)) = player_query.get_single_mut() {
+    if let Ok((mut player_data, mut player_physics)) = player_query.single_mut() {
         let mut direction = Vec2::ZERO;
 
         // Escape to exit
         if keyboard_input.just_pressed(KeyCode::Escape) {
-            exit.send(AppExit);
+            exit.write(AppExit::Success);
         }
 
         // Arrow keys to move
-        if keyboard_input.pressed(KeyCode::Up) {
+        if keyboard_input.pressed(KeyCode::ArrowUp) {
             direction.y += 1.0;
         }
-        if keyboard_input.pressed(KeyCode::Down) {
+        if keyboard_input.pressed(KeyCode::ArrowDown) {
             direction.y -= 1.0;
         }
-        if keyboard_input.pressed(KeyCode::Left) {
+        if keyboard_input.pressed(KeyCode::ArrowLeft) {
             direction.x -= 1.0;
         }
-        if keyboard_input.pressed(KeyCode::Right) {
+        if keyboard_input.pressed(KeyCode::ArrowRight) {
             direction.x += 1.0;
         }
 
@@ -159,7 +158,7 @@ pub fn s_movement(
     mut input_dir: ResMut<InputDir>,
 ) {
     if let Ok((mut player_transform, mut player_physics, mut player_data)) =
-        player_query.get_single_mut()
+        player_query.single_mut()
     {
         let player_falling = player_physics.normal.length_squared() == 0.0;
         let no_input = input_dir.dir.length_squared() == 0.0;
@@ -264,7 +263,7 @@ pub fn s_render(
     mut player_query: Query<(&mut Transform, &mut Physics), With<Player>>,
     level: Res<Level>,
 ) {
-    if let Ok((player_transform, player_physics)) = player_query.get_single_mut() {
+    if let Ok((player_transform, player_physics)) = player_query.single_mut() {
         // Draw player
         gizmos.circle_2d(
             player_transform.translation.xy(),
@@ -283,7 +282,7 @@ pub fn s_render(
 }
 
 pub fn s_timers(mut player_query: Query<&mut Player>) {
-    if let Ok(mut player_data) = player_query.get_single_mut() {
+    if let Ok(mut player_data) = player_query.single_mut() {
         if player_data.jump_timer > 0 {
             player_data.jump_timer -= 1;
         }
