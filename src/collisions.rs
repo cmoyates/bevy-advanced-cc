@@ -102,14 +102,18 @@ pub fn s_collision(
 
                         // If the player is on a wall
                         if normal_dir.x.abs() >= NORMAL_DOT_THRESHOLD {
-                            player_data.walled_timer = MAX_WALLED_TIMER * normal_dir.x as i32;
+                            player_data.wall_timer = MAX_WALLED_TIMER;
+                            player_data.wall_direction = normal_dir.x.signum();
+                            player_data.last_wall_normal = Some(normal_dir);
                             player_data.has_wall_jumped = false;
                         }
 
                         // If the player is on the ground
                         if normal_dir.y > GROUND_NORMAL_Y_THRESHOLD {
                             player_data.grounded_timer = MAX_GROUNDED_TIMER;
-                            player_data.walled_timer = 0;
+                            player_data.is_grounded = true;
+                            player_data.wall_timer = 0.0;
+                            player_data.wall_direction = 0.0;
                             player_data.has_wall_jumped = false;
                         }
                     }

@@ -45,14 +45,22 @@ pub struct InputDir {
     pub dir: Vec2,
 }
 
+// Movement constants (units: pixels/second)
 pub const PLAYER_MAX_SPEED: f32 = 5.0;
+
+// Acceleration scalers (unitless multipliers)
+// First value: acceleration when input is active
+// Second value: deceleration when input is inactive
 pub const PLAYER_ACCELERATION_SCALERS: (f32, f32) = (0.2, 0.4);
 
-pub const MAX_JUMP_TIMER: i32 = 10;
-pub const MAX_GROUNDED_TIMER: i32 = 10;
-pub const MAX_WALLED_TIMER: i32 = 10;
+// Timer constants (units: seconds)
+// These represent the duration windows for jump buffering, coyote time, and wall contact
+// Originally 10 frames at 60fps = 0.166 seconds
+pub const MAX_JUMP_TIMER: f32 = 0.166;
+pub const MAX_GROUNDED_TIMER: f32 = 0.166;
+pub const MAX_WALLED_TIMER: f32 = 0.166;
 
-// Physics constants
+// Physics constants (units: pixels/second for velocities, pixels/second² for acceleration)
 pub const JUMP_VELOCITY: f32 = 9.0;
 pub const WALL_JUMP_VELOCITY_Y: f32 = 4.5;
 pub const WALL_JUMP_VELOCITY_X: f32 = 7.8;
@@ -61,24 +69,44 @@ pub const WALL_JUMP_ACCELERATION_REDUCTION: f32 = 0.5;
 pub const JUMP_RELEASE_VELOCITY_DIVISOR: f32 = 3.0;
 
 // Collision detection thresholds
+// NORMAL_DOT_THRESHOLD: Minimum dot product for considering a surface a "wall" (0.8 ≈ 37°)
 pub const NORMAL_DOT_THRESHOLD: f32 = 0.8;
+// GROUND_NORMAL_Y_THRESHOLD: Minimum Y component of normal to be considered "ground"
 pub const GROUND_NORMAL_Y_THRESHOLD: f32 = 0.01;
+// CEILING_NORMAL_Y_THRESHOLD: Maximum Y component of normal to be considered "ceiling"
 pub const CEILING_NORMAL_Y_THRESHOLD: f32 = -0.01;
 
+/// Player component: Contains gameplay state (timers, jump state, wall contact)
 #[derive(Component)]
 pub struct Player {
-    jump_timer: i32,
-    grounded_timer: i32,
-    walled_timer: i32,
+    /// Jump buffer timer: Time remaining (seconds) to execute a buffered jump input
+    jump_timer: f32,
+    /// Coyote time timer: Time remaining (seconds) player can still jump after leaving ground
+    grounded_timer: f32,
+    /// Wall contact timer: Time remaining (seconds) player is considered touching a wall
+    wall_timer: f32,
+    /// Wall direction: X direction of wall contact (-1.0 for left, 1.0 for right, 0.0 for none)
+    wall_direction: f32,
+    /// Whether player has performed a wall jump (prevents multiple wall jumps)
     has_wall_jumped: bool,
+    /// Whether player is currently grounded (derived from grounded_timer > 0)
+    is_grounded: bool,
+    /// Last wall normal vector (for wall jump direction calculation)
+    last_wall_normal: Option<Vec2>,
 }
 
+/// Physics component: Contains pure physics state (position, velocity, acceleration, collision)
 #[derive(Component)]
 pub struct Physics {
+    /// Previous frame's position (for collision detection)
     pub prev_position: Vec2,
+    /// Current velocity vector (pixels/second)
     pub velocity: Vec2,
+    /// Current acceleration vector (pixels/second²)
     pub acceleration: Vec2,
+    /// Collision radius (pixels)
     pub radius: f32,
+    /// Surface normal at current position (zero if not touching surface)
     pub normal: Vec2,
 }
 
@@ -98,10 +126,13 @@ pub fn s_init(mut commands: Commands) {
             normal: Vec2::ZERO,
         },
         Player {
-            jump_timer: 0,
-            grounded_timer: 0,
-            walled_timer: 0,
+            jump_timer: 0.0,
+            grounded_timer: 0.0,
+            wall_timer: 0.0,
+            wall_direction: 0.0,
             has_wall_jumped: false,
+            is_grounded: false,
+            last_wall_normal: None,
         },
     ));
 
@@ -243,22 +274,22 @@ pub fn s_movement(
         // Jumping
         {
             // If the player is trying to jump
-            if player_data.jump_timer > 0 {
+            if player_data.jump_timer > 0.0 {
                 // If on the ground
-                if player_data.grounded_timer > 0 {
+                if player_data.grounded_timer > 0.0 {
                     // Jump
                     player_physics.velocity.y = JUMP_VELOCITY;
-                    player_data.jump_timer = 0;
-                    player_data.grounded_timer = 0;
+                    player_data.jump_timer = 0.0;
+                    player_data.grounded_timer = 0.0;
                 }
                 // If on a wall
-                else if player_data.walled_timer != 0 {
+                else if player_data.wall_timer > 0.0 {
                     // Wall jump
                     player_physics.velocity.y = WALL_JUMP_VELOCITY_Y;
-                    player_physics.velocity.x =
-                        player_data.walled_timer.signum() as f32 * WALL_JUMP_VELOCITY_X;
-                    player_data.jump_timer = 0;
-                    player_data.walled_timer = 0;
+                    player_physics.velocity.x = player_data.wall_direction * WALL_JUMP_VELOCITY_X;
+                    player_data.jump_timer = 0.0;
+                    player_data.wall_timer = 0.0;
+                    player_data.wall_direction = 0.0;
                     player_data.has_wall_jumped = true;
                 }
             }
@@ -294,16 +325,36 @@ pub fn s_render(
     }
 }
 
-pub fn s_timers(mut player_query: Query<&mut Player>) {
+/// Timer system: Decrements all timers by delta time
+pub fn s_timers(time: Res<Time>, mut player_query: Query<&mut Player>) {
     if let Ok(mut player_data) = player_query.single_mut() {
-        if player_data.jump_timer > 0 {
-            player_data.jump_timer -= 1;
+        let dt = time.delta_secs();
+
+        if player_data.jump_timer > 0.0 {
+            player_data.jump_timer -= dt;
+            if player_data.jump_timer < 0.0 {
+                player_data.jump_timer = 0.0;
+            }
         }
-        if player_data.grounded_timer > 0 {
-            player_data.grounded_timer -= 1;
+
+        if player_data.grounded_timer > 0.0 {
+            player_data.grounded_timer -= dt;
+            if player_data.grounded_timer < 0.0 {
+                player_data.grounded_timer = 0.0;
+                player_data.is_grounded = false;
+            } else {
+                player_data.is_grounded = true;
+            }
+        } else {
+            player_data.is_grounded = false;
         }
-        if player_data.walled_timer.abs() > 0 {
-            player_data.walled_timer -= player_data.walled_timer.signum();
+
+        if player_data.wall_timer > 0.0 {
+            player_data.wall_timer -= dt;
+            if player_data.wall_timer < 0.0 {
+                player_data.wall_timer = 0.0;
+                player_data.wall_direction = 0.0;
+            }
         }
     }
 }
