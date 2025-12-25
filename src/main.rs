@@ -1,15 +1,13 @@
 mod collisions;
 mod level;
 
-use std::{thread::sleep, time::Duration};
-
 use ::bevy::prelude::*;
 use bevy::{app::AppExit, input::ButtonInput, window::PresentMode};
 use collisions::{s_collision, CollisionPlugin};
 use level::{generate_level_polygons, Polygon};
 
-const FRAMERATE: u32 = 60;
-const FRAME_DURATION_SECS: f32 = 1.0 / FRAMERATE as f32;
+// Floating point comparison epsilon
+const EPSILON: f32 = 1e-6;
 
 fn main() {
     App::new()
@@ -31,7 +29,6 @@ fn main() {
         .add_systems(Update, s_movement.after(s_input))
         .add_systems(Update, s_timers.after(s_collision))
         .add_systems(Update, s_render.after(s_timers))
-        .add_systems(Update, s_wait_for_next_frame.after(s_render))
         .run();
 }
 
@@ -46,12 +43,15 @@ pub struct InputDir {
 }
 
 // Movement constants (units: pixels/second)
-pub const PLAYER_MAX_SPEED: f32 = 5.0;
+// Converted from 5.0 pixels/frame at 60fps = 300.0 pixels/second
+pub const PLAYER_MAX_SPEED: f32 = 300.0;
 
-// Acceleration scalers (unitless multipliers)
-// First value: acceleration when input is active
-// Second value: deceleration when input is inactive
-pub const PLAYER_ACCELERATION_SCALERS: (f32, f32) = (0.2, 0.4);
+// Acceleration scalers (units: 1/second)
+// These control how quickly velocity approaches target velocity
+// First value: acceleration rate when input is active (1/second)
+// Second value: deceleration rate when input is inactive (1/second)
+// Converted from frame-based: 0.2 per frame at 60fps = 12.0 per second
+pub const PLAYER_ACCELERATION_SCALERS: (f32, f32) = (12.0, 24.0);
 
 // Timer constants (units: seconds)
 // These represent the duration windows for jump buffering, coyote time, and wall contact
@@ -60,12 +60,21 @@ pub const MAX_JUMP_TIMER: f32 = 0.166;
 pub const MAX_GROUNDED_TIMER: f32 = 0.166;
 pub const MAX_WALLED_TIMER: f32 = 0.166;
 
-// Physics constants (units: pixels/second for velocities, pixels/second² for acceleration)
-pub const JUMP_VELOCITY: f32 = 9.0;
-pub const WALL_JUMP_VELOCITY_Y: f32 = 4.5;
-pub const WALL_JUMP_VELOCITY_X: f32 = 7.8;
-pub const GRAVITY_STRENGTH: f32 = 0.5;
+// Physics constants
+// Velocity constants (units: pixels/second)
+// Converted from frame-based: multiply by 60 (frames/second)
+pub const JUMP_VELOCITY: f32 = 540.0; // 9.0 pixels/frame * 60
+pub const WALL_JUMP_VELOCITY_Y: f32 = 270.0; // 4.5 pixels/frame * 60
+pub const WALL_JUMP_VELOCITY_X: f32 = 468.0; // 7.8 pixels/frame * 60
+
+// Gravity constant (units: pixels/second²)
+// Converted from frame-based: 0.5 pixels/frame² at 60fps = 1800.0 pixels/second²
+pub const GRAVITY_STRENGTH: f32 = 1800.0;
+
+// Wall jump acceleration reduction (unitless multiplier)
 pub const WALL_JUMP_ACCELERATION_REDUCTION: f32 = 0.5;
+
+// Jump release velocity divisor (unitless)
 pub const JUMP_RELEASE_VELOCITY_DIVISOR: f32 = 3.0;
 
 // Collision detection thresholds
@@ -116,10 +125,11 @@ pub fn s_init(mut commands: Commands) {
     commands.spawn((Camera2d, Transform::default()));
 
     // Spawn player
+    let initial_position = Vec3::new(0.0, -50.0, 0.0);
     commands.spawn((
-        Transform::from_translation(Vec3::new(0.0, -50.0, 0.0)),
+        Transform::from_translation(initial_position),
         Physics {
-            prev_position: Vec2::ZERO,
+            prev_position: initial_position.xy(),
             velocity: Vec2::ZERO,
             acceleration: Vec2::ZERO,
             radius: 12.0,
@@ -182,7 +192,8 @@ pub fn s_input(
             player_data.jump_timer = MAX_JUMP_TIMER;
         }
 
-        if keyboard_input.just_released(KeyCode::Space) && player_physics.velocity.y > 0.0 {
+        // Variable jump height: reduce velocity if jump key released early
+        if keyboard_input.just_released(KeyCode::Space) && player_physics.velocity.y > EPSILON {
             player_physics.velocity.y /= JUMP_RELEASE_VELOCITY_DIVISOR;
         }
 
@@ -195,15 +206,22 @@ pub fn s_input(
 }
 
 /// Movement system
+/// Implements frame-rate independent physics using delta time and semi-implicit Euler integration
 pub fn s_movement(
     mut player_query: Query<(&mut Transform, &mut Physics, &mut Player)>,
     input_dir: Res<InputDir>,
+    time: Res<Time>,
 ) {
     if let Ok((mut player_transform, mut player_physics, mut player_data)) =
         player_query.single_mut()
     {
-        let player_falling = player_physics.normal.length_squared() == 0.0;
-        let no_input = input_dir.dir.length_squared() == 0.0;
+        // Clamp delta time to prevent huge jumps on first frame or frame skips
+        // Maximum delta time of 1/30th second (30 FPS minimum)
+        let dt = time.delta_secs().min(1.0 / 30.0);
+
+        // Use epsilon comparison for floating point values
+        let player_falling = player_physics.normal.length_squared() < EPSILON;
+        let no_input = input_dir.dir.length_squared() < EPSILON;
 
         // Rotate input according to the normal (compute locally, don't mutate resource)
         let mut effective_input_dir = input_dir.dir;
@@ -225,20 +243,21 @@ pub fn s_movement(
             && effective_input_dir.x.abs() >= NORMAL_DOT_THRESHOLD
             && player_physics.normal.x.signum() != effective_input_dir.x.signum();
 
-        // Acceleration
+        // Calculate acceleration (units: pixels/second²)
         {
-            // Apply acceleration
+            // Apply acceleration towards target velocity
+            // This creates smooth acceleration/deceleration
             player_physics.acceleration = (effective_input_dir * PLAYER_MAX_SPEED
                 - player_physics.velocity)
                 * if no_input {
-                    // Deacceleration
+                    // Deceleration
                     PLAYER_ACCELERATION_SCALERS.1
                 } else {
                     // Acceleration
                     PLAYER_ACCELERATION_SCALERS.0
                 };
 
-            // Wall jump physics
+            // Wall jump physics - reduce acceleration after wall jump
             player_physics.acceleration *= if player_data.has_wall_jumped {
                 WALL_JUMP_ACCELERATION_REDUCTION
             } else {
@@ -253,21 +272,23 @@ pub fn s_movement(
             // Unless the player is on a wall and is trying to move away from it
             if !player_move_off_wall {
                 // Remove the acceleration in the direction of the normal
+                // This prevents acceleration into walls
                 let acceleration_adjustment =
                     player_physics.normal * player_physics.acceleration.dot(player_physics.normal);
                 player_physics.acceleration -= acceleration_adjustment;
             }
         }
 
-        // Gravity
+        // Apply gravity directly to velocity (not additive to acceleration)
+        // Gravity is a force that should be applied consistently each frame
         {
             if player_move_off_wall || player_falling {
-                // Gravity goes down
-                player_physics.acceleration.y = -GRAVITY_STRENGTH;
+                // Gravity goes down (negative Y)
+                player_physics.velocity.y -= GRAVITY_STRENGTH * dt;
             } else {
-                // Gravity goes towards the normal
-                let gravity_normal_dir = player_physics.normal * GRAVITY_STRENGTH;
-                player_physics.acceleration += gravity_normal_dir;
+                // Gravity goes towards the normal (for wall/ceiling walking)
+                let gravity_normal_dir = player_physics.normal * GRAVITY_STRENGTH * dt;
+                player_physics.velocity += gravity_normal_dir;
             }
         }
 
@@ -295,12 +316,20 @@ pub fn s_movement(
             }
         }
 
-        // Update physics
+        // Update physics using semi-implicit Euler integration
+        // 1. Update velocity: v(t+dt) = v(t) + a(t) * dt
+        // 2. Update position: x(t+dt) = x(t) + v(t+dt) * dt
+        // This is more stable than explicit Euler and preserves energy better
         player_physics.prev_position = player_transform.translation.xy();
-        let new_velocity = player_physics.velocity + player_physics.acceleration;
-        player_physics.velocity = new_velocity;
-        player_transform.translation.x += player_physics.velocity.x;
-        player_transform.translation.y += player_physics.velocity.y;
+
+        // Apply acceleration to velocity (scaled by delta time)
+        let acceleration_dt = player_physics.acceleration * dt;
+        player_physics.velocity += acceleration_dt;
+
+        // Update position using new velocity (scaled by delta time)
+        let velocity_dt = player_physics.velocity * dt;
+        player_transform.translation.x += velocity_dt.x;
+        player_transform.translation.y += velocity_dt.y;
     }
 }
 
@@ -355,19 +384,6 @@ pub fn s_timers(time: Res<Time>, mut player_query: Query<&mut Player>) {
                 player_data.wall_timer = 0.0;
                 player_data.wall_direction = 0.0;
             }
-        }
-    }
-}
-
-/// Framerate capping system
-pub fn s_wait_for_next_frame(time: Res<Time>) {
-    // If not running in wasm
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        // Sleep to cap framerate
-        let time_to_sleep = FRAME_DURATION_SECS - time.delta().as_secs_f32();
-        if time_to_sleep > 0.0 {
-            sleep(Duration::from_secs_f32(time_to_sleep));
         }
     }
 }
