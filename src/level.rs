@@ -1,10 +1,45 @@
 use bevy::{color::Color, math::Vec2};
 use rand::Rng;
 
+/// Axis-aligned bounding box for spatial optimization
+#[derive(Clone, Copy)]
+pub struct Aabb {
+    pub min: Vec2,
+    pub max: Vec2,
+}
+
+impl Aabb {
+    /// Create an AABB from a point and radius (for player collision checks)
+    pub fn from_point_radius(center: Vec2, radius: f32) -> Self {
+        Self {
+            min: center - Vec2::splat(radius),
+            max: center + Vec2::splat(radius),
+        }
+    }
+
+    /// Check if this AABB overlaps with another AABB
+    pub fn overlaps(&self, other: &Aabb) -> bool {
+        self.min.x <= other.max.x
+            && self.max.x >= other.min.x
+            && self.min.y <= other.max.y
+            && self.max.y >= other.min.y
+    }
+
+    /// Expand AABB by a given amount in all directions
+    pub fn expand(&self, amount: f32) -> Self {
+        Self {
+            min: self.min - Vec2::splat(amount),
+            max: self.max + Vec2::splat(amount),
+        }
+    }
+}
+
 pub struct Polygon {
     pub points: Vec<Vec2>,
     pub collision_side: f32,
     pub color: Color,
+    /// Cached bounding box for spatial optimization
+    pub aabb: Aabb,
 }
 
 const LEVEL_DATA: &[u8] = include_bytes!("../assets/level.json");
@@ -374,11 +409,15 @@ pub fn generate_level_polygons(grid_size: f32) -> Vec<Polygon> {
             rng.random_range(0.0..=1.0),
         );
 
+        // Compute bounding box for spatial optimization
+        let aabb = compute_polygon_aabb(&polygon_lines);
+
         // Add the polygon to the list of polygons
         polygons.push(Polygon {
             points: polygon_lines,
             collision_side,
             color,
+            aabb,
         });
     }
 
@@ -395,4 +434,31 @@ fn calculate_winding_order(vertices: &[Vec2]) -> f32 {
     }
 
     sum
+}
+
+/// Compute axis-aligned bounding box for a polygon
+fn compute_polygon_aabb(points: &[Vec2]) -> Aabb {
+    if points.is_empty() {
+        return Aabb {
+            min: Vec2::ZERO,
+            max: Vec2::ZERO,
+        };
+    }
+
+    let mut min_x = points[0].x;
+    let mut min_y = points[0].y;
+    let mut max_x = points[0].x;
+    let mut max_y = points[0].y;
+
+    for point in points.iter().skip(1) {
+        min_x = min_x.min(point.x);
+        min_y = min_y.min(point.y);
+        max_x = max_x.max(point.x);
+        max_y = max_y.max(point.y);
+    }
+
+    Aabb {
+        min: Vec2::new(min_x, min_y),
+        max: Vec2::new(max_x, max_y),
+    }
 }

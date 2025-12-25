@@ -3,8 +3,8 @@ mod level;
 
 use ::bevy::prelude::*;
 use bevy::{app::AppExit, input::ButtonInput, window::PresentMode};
-use collisions::{s_collision, CollisionPlugin};
-use level::{generate_level_polygons, Polygon};
+use collisions::{s_collision, s_debug_collision, CollisionPlugin};
+use level::{generate_level_polygons, Aabb, Polygon};
 
 // Floating point comparison epsilon
 const EPSILON: f32 = 1e-6;
@@ -28,6 +28,7 @@ fn main() {
         .add_systems(Update, s_input)
         .add_systems(Update, s_movement.after(s_input))
         .add_systems(Update, s_timers.after(s_collision))
+        .add_systems(Update, s_debug_collision.after(s_collision))
         .add_systems(Update, s_render.after(s_timers))
         .run();
 }
@@ -165,13 +166,14 @@ pub fn s_input(
     mut input_dir: ResMut<InputDir>,
     mut player_query: Query<(&mut Player, &mut Physics)>,
 ) {
+    // Escape to exit - handle this first, outside player query, so it always works
+    if keyboard_input.just_pressed(KeyCode::Escape) {
+        exit.write(AppExit::Success);
+        return;
+    }
+
     if let Ok((mut player_data, mut player_physics)) = player_query.single_mut() {
         let mut direction = Vec2::ZERO;
-
-        // Escape to exit
-        if keyboard_input.just_pressed(KeyCode::Escape) {
-            exit.write(AppExit::Success);
-        }
 
         // Arrow keys to move
         if keyboard_input.pressed(KeyCode::ArrowUp) {
