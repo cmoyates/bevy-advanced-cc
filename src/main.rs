@@ -138,10 +138,8 @@ pub fn s_input(
             player_data.jump_timer = MAX_JUMP_TIMER;
         }
 
-        if keyboard_input.just_released(KeyCode::Space) {
-            if player_physics.velocity.y > 0.0 {
-                player_physics.velocity.y /= 3.0;
-            }
+        if keyboard_input.just_released(KeyCode::Space) && player_physics.velocity.y > 0.0 {
+            player_physics.velocity.y /= 3.0;
         }
 
         // Normalize direction
@@ -273,10 +271,7 @@ pub fn s_render(
 
         // Draw level
         for polygon in &level.polygons {
-            gizmos.linestrip_2d(
-                polygon.points.iter().cloned().collect::<Vec<Vec2>>(),
-                polygon.color,
-            );
+            gizmos.linestrip_2d(polygon.points.to_vec(), polygon.color);
         }
     }
 }

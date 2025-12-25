@@ -49,8 +49,8 @@ pub fn s_collision(
                     player_transform.translation.xy() + Vec2::new(2.0, 1.0) * 10000.0,
                 );
 
-                if intersection.is_some() {
-                    intersection_points.push(intersection.unwrap());
+                if let Some(point) = intersection {
+                    intersection_points.push(point);
                     intersect_counter += 1;
                 }
 
@@ -168,14 +168,14 @@ pub fn find_projection(start: Vec2, end: Vec2, point: Vec2, radius: f32) -> (f32
 
     let dist = (point - projection_point).length_squared();
 
-    return (dist, projection_point);
+    (dist, projection_point)
 }
 
 pub fn side_of_line_detection(line_start: Vec2, line_end: Vec2, point: Vec2) -> f32 {
     let determinant = (line_end.x - line_start.x) * (point.y - line_start.y)
         - (line_end.y - line_start.y) * (point.x - line_start.x);
 
-    return determinant.signum();
+    determinant.signum()
 }
 
 pub fn line_intersect(
@@ -191,7 +191,7 @@ pub fn line_intersect(
     let t = cross_product(a_to_c, line_2) / r_cross_s;
     let u = cross_product(a_to_c, line_1) / r_cross_s;
 
-    if t >= 0.0 && t <= 1.0 && u >= 0.0 && u <= 1.0 {
+    if (0.0..=1.0).contains(&t) && (0.0..=1.0).contains(&u) {
         Some(Vec2::new(
             line_1_start.x + t * line_1.x,
             line_1_start.y + t * line_1.y,
